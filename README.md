@@ -10,6 +10,8 @@ cpp = '/opt/homebrew/opt/llvm/bin/clang++'
 llvm-config = '/opt/homebrew/opt/llvm/bin/llvm-config'
 ```
 
+make SURE to modify to fit the paths to your LLVM install!
+
 then run
 
 ```sh
