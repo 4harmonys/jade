@@ -8,14 +8,19 @@ project(
 
 llvm_dependency = dependency(
   'llvm',
-  modules : ['core', 'support', 'irreader', 'orcjit', 'native', 'passes', 'instcombine', 'scalaropts', 'transformutils', 'analysis'],
+  modules : ['core', 'support', 'irreader', 'native', 'passes', 'instcombine', 'scalaropts', 'transformutils', 'analysis'],
   method : 'config-tool',
 )
+
+curl_dependency = dependency('libcurl')
+json_dependency = dependency('nlohmann_json')
 
 inc = include_directories('.')
 
 dependencies = [
   llvm_dependency,
+  curl_dependency,
+  json_dependency,
 ]
 
 sources = [

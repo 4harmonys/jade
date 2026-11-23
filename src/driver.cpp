@@ -1,7 +1,10 @@
 #include "src/codegen.hpp"
+#include "src/log.hpp"
 #include "src/parser.hpp"
 #include "src/token.hpp"
+#include "llvm/AsmParser/Parser.h"
 #include "llvm/IR/LegacyPassManager.h"
+#include "llvm/Support/SourceMgr.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/TargetSelect.h"
@@ -17,20 +20,14 @@
 
 using namespace llvm;
 
-/// Names of the functions generated for top-level expressions (object-file mode).
+/// Names of the functions generated for top-level expressions .
 static std::vector<std::string> TopLevelFns;
 
 static void HandleDefinition() {
 	if(auto FnAST = ParseDefinition()) {
+		Log("parse", "function definition");
 		if(auto *FnIR = FnAST->codegen()) {
-			fprintf(stderr, "Read function definition:");
-			FnIR->print(errs());
-			fprintf(stderr, "\n");
-			if(JitMode) {
-				// Hand the finished module to the JIT and start a fresh one.
-				ExitOnErr(TheJIT->addModule(ThreadSafeModule(std::move(TheModule), std::move(TheContext))));
-				InitializeModuleAndManagers();
-			}
+			Log("codegen", "function '%s'", FnIR->getName().str().c_str());
 		}
 	} else {
 		// Skip token for error recovery.
@@ -40,10 +37,9 @@ static void HandleDefinition() {
 
 static void HandleExtern() {
 	if(auto ProtoAST = ParseExtern()) {
-		if(auto *FnIR = ProtoAST->codegen()) {
-			fprintf(stderr, "Read extern: ");
-			FnIR->print(errs());
-			fprintf(stderr, "\n");
+		Log("parse", "extern '%s'", ProtoAST->getName().c_str());
+		if(ProtoAST->codegen()) {
+			Log("codegen", "extern '%s'", ProtoAST->getName().c_str());
 			FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
 		}
 	} else {
@@ -55,24 +51,14 @@ static void HandleExtern() {
 static void HandleTopLevelExpression() {
 	// Evaluate a top-level expression into an anonymous function.
 	if(auto FnAST = ParseTopLevelExpr()) {
+		Log("parse", "top-level expression");
 		Function *FnIR = FnAST->codegen();
-		if(FnIR && !JitMode) {
+		if(FnIR) {
 			// Give each top-level expression a unique name; EmitMain() calls them in order.
 			std::string Name = "__anon_expr" + std::to_string(TopLevelFns.size());
 			FnIR->setName(Name);
 			TopLevelFns.push_back(Name);
-		} else if(FnIR) {
-			// Track the JIT'd memory of this anonymous expression so it can be freed after running.
-			auto RT = TheJIT->getMainJITDylib().createResourceTracker();
-
-			ExitOnErr(TheJIT->addModule(ThreadSafeModule(std::move(TheModule), std::move(TheContext)), RT));
-			InitializeModuleAndManagers();
-
-			auto ExprSymbol = ExitOnErr(TheJIT->lookup("__anon_expr"));
-			double (*FP)() = ExprSymbol.getAddress().toPtr<double (*)()>();
-			fprintf(stderr, "Evaluated to %f\n", FP());
-
-			ExitOnErr(RT->remove());
+			Log("codegen", "top-level expression as '%s'", Name.c_str());
 		}
 	} else {
 		// Skip token for error recovery.
@@ -81,11 +67,8 @@ static void HandleTopLevelExpression() {
 }
 
 /// top ::= definition | external | expression | ';'
-void MainLoop(bool Prompt) {
+void MainLoop() {
 	while(true) {
-		if(Prompt) {
-			fprintf(stderr, "ready> ");
-		}
 		switch(GetCurTok()) {
 			case tok_eof:
 				return;
@@ -143,12 +126,34 @@ static bool EmitMain() {
 	return !verifyFunction(*Main, &errs());
 }
 
-/// EmitObjectFile - Compile TheModule for the host target and write it to Filename.
-/// Returns 0 on success, nonzero on failure.
-int EmitObjectFile(const char *Filename) {
+/// GenerateIR - Finish TheModule (adds the native `main`) and return its raw LLVM IR.
+/// Call this once, before EmitObjectFile, which compiles that same module.
+bool GenerateIR(std::string &IR) {
+	Log("codegen", "generating native main");
 	if(!EmitMain()) {
+		return false;
+	}
+	raw_string_ostream IRStream(IR);
+	TheModule->print(IRStream, nullptr);
+	return true;
+}
+
+/// EmitObjectFile - Parse IR (possibly modified since GenerateIR) back into a module,
+/// compile that module for the host target and write it to Filename.
+/// Returns 0 on success, nonzero on failure.
+int EmitObjectFile(const char *Filename, const std::string &IR) {
+	Log("emit", "parsing IR (%zu chars)", IR.size());
+	SMDiagnostic Diag;
+	std::unique_ptr<Module> Parsed = parseAssemblyString(IR, Diag, *TheContext);
+	if(!Parsed) {
+		Diag.print("jade", errs());
 		return 1;
 	}
+	if(verifyModule(*Parsed, &errs())) {
+		return 1;
+	}
+	TheModule = std::move(Parsed);
+	Log("emit", "IR verified");
 
 	// Initialize the target registry etc.
 	InitializeAllTargetInfos();
@@ -193,10 +198,11 @@ int EmitObjectFile(const char *Filename) {
 		return 1;
 	}
 
+	Log("emit", "compiling for %s", TargetTriple.c_str());
 	pass.run(*TheModule);
 	dest.flush();
 
-	outs() << "Wrote " << Filename << "\n";
+	Log("emit", "wrote %s", Filename);
 	return 0;
 }
 

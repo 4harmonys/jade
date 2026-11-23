@@ -2,6 +2,9 @@
 
 ## Setup
 
+>[!NOTE]
+>It wont work unless you set the enviornment variable: `ANTHROPIC_API_KEY_COLON_THREE`
+
 Create a `llvm.ini` file in the root directory:
 ```ini
 [binaries]
@@ -30,4 +33,3 @@ optionally run it!
 ./build/jade
 ```
 
-but wait! it wont work, you need to set the env var: `ANTHROPIC_API_KEY_COLON_THREE`

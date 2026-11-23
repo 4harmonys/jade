@@ -3,5 +3,6 @@
 /llvm.ini
 
 .env
-
 .DS_Store
+
+*.o

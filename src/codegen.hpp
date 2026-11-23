@@ -1,6 +1,5 @@
 #pragma once
 
-#include "include/KaleidoscopeJIT.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/IR/BasicBlock.h"
@@ -36,7 +35,6 @@
 #include <vector>
 
 using namespace llvm;
-using namespace llvm::orc;
 
 class PrototypeAST;
 
@@ -45,9 +43,6 @@ extern std::unique_ptr<LLVMContext> TheContext;
 extern std::unique_ptr<Module> TheModule;
 extern std::unique_ptr<IRBuilder<>> Builder;
 extern std::map<std::string, AllocaInst *> NamedValues;
-extern std::unique_ptr<KaleidoscopeJIT> TheJIT;
-// True when running in --jit mode (execute as we go) rather than emitting an object file.
-extern bool JitMode;
 extern std::unique_ptr<FunctionPassManager> TheFPM;
 extern std::unique_ptr<LoopAnalysisManager> TheLAM;
 extern std::unique_ptr<FunctionAnalysisManager> TheFAM;
@@ -56,7 +51,6 @@ extern std::unique_ptr<ModuleAnalysisManager> TheMAM;
 extern std::unique_ptr<PassInstrumentationCallbacks> ThePIC;
 extern std::unique_ptr<StandardInstrumentations> TheSI;
 extern std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
-extern ExitOnError ExitOnErr;
 
 Function *getFunction(std::string Name);
 void InitializeModuleAndManagers();
