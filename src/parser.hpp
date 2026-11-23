@@ -12,4 +12,4 @@ int GetCurTok();
 
 /// BinopPrecedence - This holds the precedence for each binary operator that is
 /// defined.
-inline std::map<char, int> BinopPrecedence;
+extern std::map<char, int> BinopPrecedence;

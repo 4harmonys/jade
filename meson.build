@@ -21,6 +21,7 @@ sources = [
   'src/lexer.cpp',
   'src/parser.cpp',
   'src/driver.cpp',
+  'src/codegen.cpp',
 ]
 
 jade_executable = executable(

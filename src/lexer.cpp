@@ -2,6 +2,9 @@
 #include "token.hpp"
 #include <cstdlib>
 
+std::string IdentifierStr;
+double NumVal;
+
 /// gettok - Return the next token from standard input.
 int gettok() {
 	static int LastChar = ' ';

@@ -2,14 +2,16 @@
 #include "src/ast.hpp"
 #include "src/lexer.hpp"
 #include "src/token.hpp"
+#include "utils.hpp"
 #include <cctype>
-#include <cstdio>
 #include <cstdlib>
 #include <map>
 #include <string>
 #include <utility>
 
 static int CurTok;
+
+std::map<char, int> BinopPrecedence;
 
 int GetCurTok() {
 	return CurTok;
@@ -31,16 +33,6 @@ static int GetTokPrecedence() {
 		return -1;
 	}
 	return TokPrec;
-}
-
-/// LogError* - These are little helper functions for error handling.
-std::unique_ptr<ExprAST> LogError(const char *Str) {
-	fprintf(stderr, "Error: %s\n", Str);
-	return nullptr;
-}
-std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
-	LogError(Str);
-	return nullptr;
 }
 
 static std::unique_ptr<ExprAST> ParseExpression();
