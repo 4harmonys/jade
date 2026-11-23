@@ -5,6 +5,7 @@
 #include <llvm/IR/Value.h>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 /// ExprAST - Base class for all expression nodes.
@@ -12,6 +13,12 @@ class ExprAST {
   public:
 	virtual ~ExprAST() = default;
 	virtual llvm::Value *codegen() = 0;
+
+	/// Returns the variable name if this node is a plain variable reference, else nullptr.
+	/// (Avoids relying on RTTI, which LLVM builds usually disable.)
+	virtual const std::string *variableName() const {
+		return nullptr;
+	}
 };
 
 /// NumberExprAST - Expression class for numeric literals like "1.0".
@@ -30,6 +37,12 @@ class VariableExprAST : public ExprAST {
   public:
 	VariableExprAST(const std::string &Name) : Name(Name) {}
 	llvm::Value *codegen() override;
+	const std::string &getName() const {
+		return Name;
+	}
+	const std::string *variableName() const override {
+		return &Name;
+	}
 };
 
 /// UnaryExprAST - Expression class for a unary operator.
@@ -84,6 +97,17 @@ class ForExprAST : public ExprAST {
 	           std::unique_ptr<ExprAST> Step, std::unique_ptr<ExprAST> Body)
 	    : VarName(VarName), Start(std::move(Start)), End(std::move(End)), Step(std::move(Step)),
 	      Body(std::move(Body)) {}
+	llvm::Value *codegen() override;
+};
+
+/// VarExprAST - Expression class for var/in/end
+class VarExprAST : public ExprAST {
+	std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames;
+	std::unique_ptr<ExprAST> Body;
+
+  public:
+	VarExprAST(std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames, std::unique_ptr<ExprAST> Body)
+	    : VarNames(std::move(VarNames)), Body(std::move(Body)) {}
 	llvm::Value *codegen() override;
 };
 

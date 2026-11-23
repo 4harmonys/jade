@@ -12,6 +12,7 @@ int main(void) {
 	InitializeNativeTargetAsmParser();
 
 	// 1 is lowest, >1 == higher precedence.
+	BinopPrecedence['='] = 2;
 	BinopPrecedence['<'] = 10;
 	BinopPrecedence['+'] = 20;
 	BinopPrecedence['-'] = 20;

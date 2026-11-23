@@ -22,6 +22,7 @@
 #include "llvm/Transforms/Scalar/GVN.h"
 #include "llvm/Transforms/Scalar/Reassociate.h"
 #include "llvm/Transforms/Scalar/SimplifyCFG.h"
+#include "llvm/Transforms/Utils/Mem2Reg.h"
 #include <algorithm>
 #include <cassert>
 #include <cctype>
@@ -42,7 +43,7 @@ class PrototypeAST;
 extern std::unique_ptr<LLVMContext> TheContext;
 extern std::unique_ptr<Module> TheModule;
 extern std::unique_ptr<IRBuilder<>> Builder;
-extern std::map<std::string, Value *> NamedValues;
+extern std::map<std::string, AllocaInst *> NamedValues;
 extern std::unique_ptr<KaleidoscopeJIT> TheJIT;
 extern std::unique_ptr<FunctionPassManager> TheFPM;
 extern std::unique_ptr<LoopAnalysisManager> TheLAM;
