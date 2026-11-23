@@ -1,4 +1,5 @@
 #include "codegen.hpp"
+#include "src/parser.hpp"
 #include "src/utils.hpp"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -66,6 +67,20 @@ Value *VariableExprAST::codegen() {
 	return V;
 }
 
+Value *UnaryExprAST::codegen() {
+	Value *OperandV = Operand->codegen();
+	if(!OperandV) {
+		return nullptr;
+	}
+
+	Function *F = getFunction(std::string("unary") + Opcode);
+	if(!F) {
+		return LogErrorV("Unknown unary operator");
+	}
+
+	return Builder->CreateCall(F, OperandV, "unop");
+}
+
 Value *BinaryExprAST::codegen() {
 	Value *L = LHS->codegen();
 	Value *R = RHS->codegen();
@@ -85,8 +100,18 @@ Value *BinaryExprAST::codegen() {
 			// Convert bool 0/1 to double 0.0 or 1.0
 			return Builder->CreateUIToFP(L, Type::getDoubleTy(*TheContext), "booltmp");
 		default:
-			return LogErrorV("invalid binary operator");
+			break;
 	}
+
+	// If it wasn't a builtin binary operator, it must be a user defined one. Emit
+	// a call to it.
+	Function *F = getFunction(std::string("binary") + Op);
+	if(!F) {
+		return LogErrorV("binary operator not found");
+	}
+
+	Value *Ops[] = {L, R};
+	return Builder->CreateCall(F, Ops, "binop");
 }
 
 Value *CallExprAST::codegen() {
@@ -265,6 +290,11 @@ Function *FunctionAST::codegen() {
 		return nullptr;
 	}
 
+	// If this is an operator, install it.
+	if(P.isBinaryOp()) {
+		BinopPrecedence[P.getOperatorName()] = P.getBinaryPrecedence();
+	}
+
 	// Create a new basic block to start insertion into.
 	BasicBlock *BB = BasicBlock::Create(*TheContext, "entry", TheFunction);
 	Builder->SetInsertPoint(BB);
@@ -290,6 +320,10 @@ Function *FunctionAST::codegen() {
 
 	// Error reading body, remove function.
 	TheFunction->eraseFromParent();
+
+	if(P.isBinaryOp()) {
+		BinopPrecedence.erase(P.getOperatorName());
+	}
 	return nullptr;
 }
 

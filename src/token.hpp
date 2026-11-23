@@ -22,6 +22,10 @@ enum Token {
 	tok_for = -9,
 	tok_in = -10,
 	tok_end = -11,
+
+	// operators
+	tok_binary = -12,
+	tok_unary = -13,
 };
 
 extern std::string IdentifierStr; // Filled in if tok_identifier

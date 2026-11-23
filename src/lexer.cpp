@@ -44,6 +44,12 @@ int gettok() {
 		if(IdentifierStr == "end") {
 			return tok_end;
 		}
+		if(IdentifierStr == "binary") {
+			return tok_binary;
+		}
+		if(IdentifierStr == "unary") {
+			return tok_unary;
+		}
 		return tok_identifier;
 	}
 	if(isdigit(LastChar) || LastChar == '.') { // Number: [0-9.]+
