@@ -1,4 +1,5 @@
 
+#include "codegen.hpp"
 #include "driver.hpp"
 #include "parser.hpp"
 #include "src/driver.hpp"
@@ -6,6 +7,10 @@
 #include <cstdio>
 
 int main(void) {
+	InitializeNativeTarget();
+	InitializeNativeTargetAsmPrinter();
+	InitializeNativeTargetAsmParser();
+
 	// 1 is lowest, >1 == higher precedence.
 	BinopPrecedence['<'] = 10;
 	BinopPrecedence['+'] = 20;
@@ -15,6 +20,10 @@ int main(void) {
 	// Prime the first token.
 	fprintf(stderr, "ready> ");
 	getNextToken();
+
+	TheJIT = ExitOnErr(KaleidoscopeJIT::Create());
+
+	InitializeModuleAndManagers();
 
 	// Run the main "interpreter loop" now.
 	MainLoop();

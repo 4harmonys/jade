@@ -8,9 +8,11 @@ project(
 
 llvm_dependency = dependency(
   'llvm',
-  modules : ['core', 'support', 'irreader'],
+  modules : ['core', 'support', 'irreader', 'orcjit', 'native', 'passes', 'instcombine', 'scalaropts', 'transformutils', 'analysis'],
   method : 'config-tool',
 )
+
+inc = include_directories('.')
 
 dependencies = [
   llvm_dependency,
@@ -29,6 +31,7 @@ jade_executable = executable(
   sources,
   install : true,
   dependencies : dependencies,
+  include_directories : inc,
 )
 
 test('basic', jade_executable)

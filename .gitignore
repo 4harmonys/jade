@@ -1,0 +1,6 @@
+/.cache
+/build
+
+.env
+
+.DS_Store

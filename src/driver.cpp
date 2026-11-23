@@ -15,21 +15,14 @@
 
 using namespace llvm;
 
-static void InitializeModule() {
-	// Open a new context and module.
-	TheContext = std::make_unique<LLVMContext>();
-	TheModule = std::make_unique<Module>("my cool jit", *TheContext);
-
-	// Create a new builder for the module.
-	Builder = std::make_unique<IRBuilder<>>(*TheContext);
-}
-
 static void HandleDefinition() {
 	if(auto FnAST = ParseDefinition()) {
 		if(auto *FnIR = FnAST->codegen()) {
 			fprintf(stderr, "Read function definition:");
 			FnIR->print(errs());
 			fprintf(stderr, "\n");
+			ExitOnErr(TheJIT->addModule(ThreadSafeModule(std::move(TheModule), std::move(TheContext))));
+			InitializeModuleAndManagers();
 		}
 	} else {
 		// Skip token for error recovery.
@@ -43,6 +36,7 @@ static void HandleExtern() {
 			fprintf(stderr, "Read extern: ");
 			FnIR->print(errs());
 			fprintf(stderr, "\n");
+			FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
 		}
 	} else {
 		// Skip token for error recovery.
@@ -53,13 +47,25 @@ static void HandleExtern() {
 static void HandleTopLevelExpression() {
 	// Evaluate a top-level expression into an anonymous function.
 	if(auto FnAST = ParseTopLevelExpr()) {
-		if(auto *FnIR = FnAST->codegen()) {
-			fprintf(stderr, "Read top-level expression:");
-			FnIR->print(errs());
-			fprintf(stderr, "\n");
+		if(FnAST->codegen()) {
+			// Create a ResourceTracker to track JIT'd memory allocated to our
+			// anonymous expression -- that way we can free it after executing.
+			auto RT = TheJIT->getMainJITDylib().createResourceTracker();
 
-			// Remove the anonymous expression.
-			FnIR->eraseFromParent();
+			auto TSM = ThreadSafeModule(std::move(TheModule), std::move(TheContext));
+			ExitOnErr(TheJIT->addModule(std::move(TSM), RT));
+			InitializeModuleAndManagers();
+
+			// Search the JIT for the __anon_expr symbol.
+			auto ExprSymbol = ExitOnErr(TheJIT->lookup("__anon_expr"));
+
+			// Get the symbol's address and cast it to the right type (takes no
+			// arguments, returns a double) so we can call it as a native function.
+			double (*FP)() = ExprSymbol.getAddress().toPtr<double (*)()>();
+			fprintf(stderr, "Evaluated to %f\n", FP());
+
+			// Delete the anonymous expression module from the JIT.
+			ExitOnErr(RT->remove());
 		}
 	} else {
 		// Skip token for error recovery.
@@ -69,8 +75,6 @@ static void HandleTopLevelExpression() {
 
 /// top ::= definition | external | expression | ';'
 void MainLoop() {
-	InitializeModule();
-
 	while(true) {
 		fprintf(stderr, "ready> ");
 		switch(GetCurTok()) {
@@ -90,4 +94,26 @@ void MainLoop() {
 				break;
 		}
 	}
+}
+
+//===----------------------------------------------------------------------===//
+// "Library" functions that can be "extern'd" from user code.
+//===----------------------------------------------------------------------===//
+
+#ifdef _WIN32
+#define DLLEXPORT __declspec(dllexport)
+#else
+#define DLLEXPORT
+#endif
+
+/// putchard - putchar that takes a double and returns 0.
+extern "C" DLLEXPORT double putchard(double X) {
+	fputc((char)X, stderr);
+	return 0;
+}
+
+/// printd - printf that takes a double prints it as "%f\n", returning 0.
+extern "C" DLLEXPORT double printd(double X) {
+	fprintf(stderr, "%f\n", X);
+	return 0;
 }
