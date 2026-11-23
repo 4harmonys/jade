@@ -112,6 +112,133 @@ Value *CallExprAST::codegen() {
 	return Builder->CreateCall(CalleeF, ArgsV, "calltmp");
 }
 
+Value *IfExprAST::codegen() {
+	Value *CondV = Cond->codegen();
+	if(!CondV) {
+		return nullptr;
+	}
+
+	// Convert condition to a bool by comparing non-equal to 0.0.
+	CondV = Builder->CreateFCmpONE(CondV, ConstantFP::get(*TheContext, APFloat(0.0)), "ifcond");
+
+	Function *TheFunction = Builder->GetInsertBlock()->getParent();
+
+	BasicBlock *ThenBB = BasicBlock::Create(*TheContext, "then", TheFunction);
+	BasicBlock *ElseBB = BasicBlock::Create(*TheContext, "else");
+	BasicBlock *MergeBB = BasicBlock::Create(*TheContext, "ifcont");
+
+	Builder->CreateCondBr(CondV, ThenBB, ElseBB);
+
+	// Emit then value.
+	Builder->SetInsertPoint(ThenBB);
+	Value *ThenV = Then->codegen();
+	if(!ThenV) {
+		return nullptr;
+	}
+	Builder->CreateBr(MergeBB);
+	// Codegen of 'Then' can change the current block, update ThenBB for the PHI.
+	ThenBB = Builder->GetInsertBlock();
+
+	// Emit else block.
+	TheFunction->insert(TheFunction->end(), ElseBB);
+	Builder->SetInsertPoint(ElseBB);
+	Value *ElseV = Else->codegen();
+	if(!ElseV) {
+		return nullptr;
+	}
+	Builder->CreateBr(MergeBB);
+	ElseBB = Builder->GetInsertBlock();
+
+	// Emit merge block.
+	TheFunction->insert(TheFunction->end(), MergeBB);
+	Builder->SetInsertPoint(MergeBB);
+	PHINode *PN = Builder->CreatePHI(Type::getDoubleTy(*TheContext), 2, "iftmp");
+
+	PN->addIncoming(ThenV, ThenBB);
+	PN->addIncoming(ElseV, ElseBB);
+	return PN;
+}
+
+// Output for-loop as:
+//   ...
+//   start = startexpr
+//   goto loop
+// loop:
+//   variable = phi [start, loopheader], [nextvariable, loopend]
+//   ...
+//   bodyexpr
+//   ...
+// loopend:
+//   step = stepexpr
+//   nextvariable = variable + step
+//   endcond = endexpr
+//   br endcond, loop, endloop
+// outloop:
+Value *ForExprAST::codegen() {
+	// Emit the start code first, without 'variable' in scope.
+	Value *StartVal = Start->codegen();
+	if(!StartVal) {
+		return nullptr;
+	}
+
+	Function *TheFunction = Builder->GetInsertBlock()->getParent();
+	BasicBlock *PreheaderBB = Builder->GetInsertBlock();
+	BasicBlock *LoopBB = BasicBlock::Create(*TheContext, "loop", TheFunction);
+
+	// Explicit fall through from the current block to the LoopBB.
+	Builder->CreateBr(LoopBB);
+	Builder->SetInsertPoint(LoopBB);
+
+	PHINode *Variable = Builder->CreatePHI(Type::getDoubleTy(*TheContext), 2, VarName);
+	Variable->addIncoming(StartVal, PreheaderBB);
+
+	// If the loop variable shadows an existing variable, save it to restore later.
+	Value *OldVal = NamedValues[VarName];
+	NamedValues[VarName] = Variable;
+
+	// Emit the body; its value is ignored, but it must not error.
+	if(!Body->codegen()) {
+		return nullptr;
+	}
+
+	Value *StepVal = nullptr;
+	if(Step) {
+		StepVal = Step->codegen();
+		if(!StepVal) {
+			return nullptr;
+		}
+	} else {
+		StepVal = ConstantFP::get(*TheContext, APFloat(1.0));
+	}
+
+	Value *NextVar = Builder->CreateFAdd(Variable, StepVal, "nextvar");
+
+	Value *EndCond = End->codegen();
+	if(!EndCond) {
+		return nullptr;
+	}
+	EndCond = Builder->CreateFCmpONE(EndCond, ConstantFP::get(*TheContext, APFloat(0.0)), "loopcond");
+
+	BasicBlock *LoopEndBB = Builder->GetInsertBlock();
+	BasicBlock *AfterBB = BasicBlock::Create(*TheContext, "afterloop", TheFunction);
+
+	Builder->CreateCondBr(EndCond, LoopBB, AfterBB);
+	Builder->SetInsertPoint(AfterBB);
+
+	// Add a new entry to the PHI node for the backedge.
+	Variable->addIncoming(NextVar, LoopEndBB);
+
+	// Restore the unshadowed variable.
+	if(OldVal) {
+		NamedValues[VarName] = OldVal;
+	} else {
+		NamedValues.erase(VarName);
+	}
+
+	// for expr always returns 0.0.
+	return Constant::getNullValue(Type::getDoubleTy(*TheContext));
+}
+
 Function *PrototypeAST::codegen() {
 	// Make the function type:  double(double,double) etc.
 	std::vector<Type *> Doubles(Args.size(), Type::getDoubleTy(*TheContext));

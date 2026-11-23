@@ -99,6 +99,101 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
 	return std::make_unique<CallExprAST>(IdName, std::move(Args));
 }
 
+/// ifexpr ::= 'if' expression 'then' expression 'else' expression 'end'
+static std::unique_ptr<ExprAST> ParseIfExpr() {
+	getNextToken(); // eat the if.
+
+	auto Cond = ParseExpression();
+	if(!Cond) {
+		return nullptr;
+	}
+
+	if(CurTok != tok_then) {
+		return LogError("expected then");
+	}
+	getNextToken(); // eat the then
+
+	auto Then = ParseExpression();
+	if(!Then) {
+		return nullptr;
+	}
+
+	if(CurTok != tok_else) {
+		return LogError("expected else");
+	}
+	getNextToken(); // eat the else
+
+	auto Else = ParseExpression();
+	if(!Else) {
+		return nullptr;
+	}
+
+	if(CurTok != tok_end) {
+		return LogError("expected 'end' after if");
+	}
+	getNextToken(); // eat the end
+
+	return std::make_unique<IfExprAST>(std::move(Cond), std::move(Then), std::move(Else));
+}
+
+/// forexpr ::= 'for' identifier '=' expr ',' expr (',' expr)? 'in' expression 'end'
+static std::unique_ptr<ExprAST> ParseForExpr() {
+	getNextToken(); // eat the for.
+
+	if(CurTok != tok_identifier) {
+		return LogError("expected identifier after for");
+	}
+
+	std::string IdName = IdentifierStr;
+	getNextToken(); // eat identifier.
+
+	if(CurTok != '=') {
+		return LogError("expected '=' after for");
+	}
+	getNextToken(); // eat '='.
+
+	auto Start = ParseExpression();
+	if(!Start) {
+		return nullptr;
+	}
+	if(CurTok != ',') {
+		return LogError("expected ',' after for start value");
+	}
+	getNextToken();
+
+	auto End = ParseExpression();
+	if(!End) {
+		return nullptr;
+	}
+
+	// The step value is optional.
+	std::unique_ptr<ExprAST> Step;
+	if(CurTok == ',') {
+		getNextToken();
+		Step = ParseExpression();
+		if(!Step) {
+			return nullptr;
+		}
+	}
+
+	if(CurTok != tok_in) {
+		return LogError("expected 'in' after for");
+	}
+	getNextToken(); // eat 'in'.
+
+	auto Body = ParseExpression();
+	if(!Body) {
+		return nullptr;
+	}
+
+	if(CurTok != tok_end) {
+		return LogError("expected 'end' after for");
+	}
+	getNextToken(); // eat the end
+
+	return std::make_unique<ForExprAST>(IdName, std::move(Start), std::move(End), std::move(Step), std::move(Body));
+}
+
 /// primary
 ///   ::= identifierexpr
 ///   ::= numberexpr
@@ -113,6 +208,10 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
 			return ParseNumberExpr();
 		case '(':
 			return ParseParenExpr();
+		case tok_if:
+			return ParseIfExpr();
+		case tok_for:
+			return ParseForExpr();
 	}
 }
 
@@ -194,7 +293,7 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
 	return std::make_unique<PrototypeAST>(FnName, std::move(ArgNames));
 }
 
-/// definition ::= 'def' prototype expression
+/// definition ::= 'def' prototype expression 'end'
 std::unique_ptr<FunctionAST> ParseDefinition() {
 	getNextToken(); // eat def.
 	auto Proto = ParsePrototype();
@@ -202,10 +301,17 @@ std::unique_ptr<FunctionAST> ParseDefinition() {
 		return nullptr;
 	}
 
-	if(auto E = ParseExpression()) {
-		return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
+	auto E = ParseExpression();
+	if(!E) {
+		return nullptr;
 	}
-	return nullptr;
+	if(CurTok != tok_end) {
+		LogError("expected 'end' after function body");
+		return nullptr;
+	}
+	getNextToken(); // eat the end
+
+	return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
 }
 
 /// toplevelexpr ::= expression
