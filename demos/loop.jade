@@ -1,0 +1,12 @@
+// Sum 0..10 with a mutable accumulator and a range loop.
+fn sum() -> f64 {
+    let mut total = 0.;
+    for i in 0..10 {
+        total = total + i;
+    };
+    total
+}
+
+fn main() -> f64 {
+    sum()
+}

@@ -166,6 +166,17 @@ Value *CallExprAST::codegen() {
 	return Builder->CreateCall(CalleeF, ArgsV, "calltmp");
 }
 
+Value *BlockExprAST::codegen() {
+	Value *Last = nullptr;
+	for(auto &E : Exprs) {
+		Last = E->codegen();
+		if(!Last) {
+			return nullptr;
+		}
+	}
+	return Last;
+}
+
 Value *IfExprAST::codegen() {
 	Value *CondV = Cond->codegen();
 	if(!CondV) {

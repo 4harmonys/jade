@@ -8,6 +8,13 @@ double NumVal;
 /// gettok - Return the next token from standard input.
 int gettok() {
 	static int LastChar = ' ';
+	// Set after lexing "N.." so the first '.' of the range operator is returned next.
+	static bool PendingDot = false;
+
+	if(PendingDot) {
+		PendingDot = false;
+		return '.';
+	}
 
 	// Skip any whitespace.
 	while(isspace(LastChar)) {
@@ -20,8 +27,8 @@ int gettok() {
 			IdentifierStr += LastChar;
 		}
 
-		if(IdentifierStr == "def") {
-			return tok_def;
+		if(IdentifierStr == "fn") {
+			return tok_fn;
 		}
 		if(IdentifierStr == "extern") {
 			return tok_extern;
@@ -29,8 +36,8 @@ int gettok() {
 		if(IdentifierStr == "if") {
 			return tok_if;
 		}
-		if(IdentifierStr == "then") {
-			return tok_then;
+		if(IdentifierStr == "mut") {
+			return tok_mut;
 		}
 		if(IdentifierStr == "else") {
 			return tok_else;
@@ -41,38 +48,56 @@ int gettok() {
 		if(IdentifierStr == "in") {
 			return tok_in;
 		}
-		if(IdentifierStr == "end") {
-			return tok_end;
-		}
 		if(IdentifierStr == "binary") {
 			return tok_binary;
 		}
 		if(IdentifierStr == "unary") {
 			return tok_unary;
 		}
-		if(IdentifierStr == "var") {
-			return tok_var;
+		if(IdentifierStr == "let") {
+			return tok_let;
 		}
 		return tok_identifier;
 	}
-	if(isdigit(LastChar) || LastChar == '.') { // Number: [0-9.]+
+	if(isdigit(LastChar)) { // Number: [0-9]+ ('.' [0-9]*)?  ("1..2" is a range, not "1." then ".2")
 		std::string NumStr;
-		do {
+		while(isdigit(LastChar)) {
 			NumStr += LastChar;
 			LastChar = getchar();
-		} while(isdigit(LastChar) || LastChar == '.');
+		}
+		if(LastChar == '.') {
+			int Next = getchar();
+			if(Next == '.') {
+				// Range operator: leave the second '.' as the current char.
+				PendingDot = true;
+				LastChar = Next;
+			} else {
+				NumStr += '.';
+				LastChar = Next;
+				while(isdigit(LastChar)) {
+					NumStr += LastChar;
+					LastChar = getchar();
+				}
+			}
+		}
 
 		NumVal = strtod(NumStr.c_str(), 0);
 		return tok_number;
 	}
-	if(LastChar == '#') {
-		// Comment until end of line.
-		do {
-			LastChar = getchar();
-		} while(LastChar != EOF && LastChar != '\n' && LastChar != '\r');
+	if(LastChar == '/') {
+		int Next = getchar();
+		if(Next == '/') {
+			// Comment until end of line.
+			do {
+				LastChar = getchar();
+			} while(LastChar != EOF && LastChar != '\n' && LastChar != '\r');
 
-		if(LastChar != EOF) {
-			return gettok();
+			if(LastChar != EOF) {
+				return gettok();
+			}
+		} else {
+			LastChar = Next;
+			return '/';
 		}
 	}
 	// Check for end of file.  Don't eat the EOF.

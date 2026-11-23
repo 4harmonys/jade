@@ -8,7 +8,7 @@ enum Token {
 	tok_eof = -1,
 
 	// commands
-	tok_def = -2,
+	tok_fn = -2,
 	tok_extern = -3,
 
 	// primary
@@ -17,18 +17,17 @@ enum Token {
 
 	// control
 	tok_if = -6,
-	tok_then = -7,
+	tok_mut = -7,
 	tok_else = -8,
 	tok_for = -9,
 	tok_in = -10,
-	tok_end = -11,
 
 	// operators
 	tok_binary = -12,
 	tok_unary = -13,
 
-	// var definition
-	tok_var = -14,
+	// let binding
+	tok_let = -14,
 };
 
 extern std::string IdentifierStr; // Filled in if tok_identifier

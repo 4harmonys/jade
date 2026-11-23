@@ -77,7 +77,16 @@ class CallExprAST : public ExprAST {
 	llvm::Value *codegen() override;
 };
 
-/// IfExprAST - Expression class for if/then/else/end.
+/// BlockExprAST - A `{ a; b; c }` block: evaluates each expression in order, yields the last.
+class BlockExprAST : public ExprAST {
+	std::vector<std::unique_ptr<ExprAST>> Exprs;
+
+  public:
+	BlockExprAST(std::vector<std::unique_ptr<ExprAST>> Exprs) : Exprs(std::move(Exprs)) {}
+	llvm::Value *codegen() override;
+};
+
+/// IfExprAST - Expression class for if/else.
 class IfExprAST : public ExprAST {
 	std::unique_ptr<ExprAST> Cond, Then, Else;
 
@@ -87,7 +96,7 @@ class IfExprAST : public ExprAST {
 	llvm::Value *codegen() override;
 };
 
-/// ForExprAST - Expression class for for/in/end.
+/// ForExprAST - Expression class for for/in.
 class ForExprAST : public ExprAST {
 	std::string VarName;
 	std::unique_ptr<ExprAST> Start, End, Step, Body;
@@ -100,7 +109,7 @@ class ForExprAST : public ExprAST {
 	llvm::Value *codegen() override;
 };
 
-/// VarExprAST - Expression class for var/in/end
+/// VarExprAST - Expression class for let bindings
 class VarExprAST : public ExprAST {
 	std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames;
 	std::unique_ptr<ExprAST> Body;
