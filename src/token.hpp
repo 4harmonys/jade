@@ -32,4 +32,4 @@ enum Token {
 };
 
 extern std::string IdentifierStr; // Filled in if tok_identifier
-extern double NumVal;              // Filled in if tok_number
+extern double NumVal;             // Filled in if tok_number

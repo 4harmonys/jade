@@ -4,9 +4,9 @@
 #include "src/token.hpp"
 #include "llvm/AsmParser/Parser.h"
 #include "llvm/IR/LegacyPassManager.h"
-#include "llvm/Support/SourceMgr.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
@@ -15,8 +15,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
-#include <vector>
 #include <system_error>
+#include <vector>
 
 using namespace llvm;
 
@@ -110,7 +110,8 @@ static bool EmitMain() {
 	}
 
 	Type *I32 = Type::getInt32Ty(*TheContext);
-	Function *Main = Function::Create(FunctionType::get(I32, false), Function::ExternalLinkage, "main", TheModule.get());
+	Function *Main =
+	    Function::Create(FunctionType::get(I32, false), Function::ExternalLinkage, "main", TheModule.get());
 	Builder->SetInsertPoint(BasicBlock::Create(*TheContext, "entry", Main));
 
 	FunctionCallee Printf = TheModule->getOrInsertFunction(

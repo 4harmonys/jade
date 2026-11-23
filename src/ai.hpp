@@ -24,7 +24,8 @@ class AnthropicClient {
 		Log("ai", "sending to %s (max_tokens=%d, prompt=%zu chars)", model.c_str(), maximumTokens, prompt.size());
 		json responseBody = post("/v1/messages", requestBody);
 
-		Log("ai", "model responded: stop_reason=%s", responseBody.contains("stop_reason") ? responseBody["stop_reason"].dump().c_str() : "?");
+		Log("ai", "model responded: stop_reason=%s",
+		    responseBody.contains("stop_reason") ? responseBody["stop_reason"].dump().c_str() : "?");
 		if(responseBody.contains("usage")) {
 			Log("ai", "usage %s", responseBody["usage"].dump().c_str());
 		}
@@ -33,11 +34,11 @@ class AnthropicClient {
 			throw std::runtime_error("api error: " + responseBody["error"].dump().substr(0, 500));
 		}
 
-		// Join every text block; the first block isn't necessarily text (e.g. thinking).
 		std::string text;
 		if(responseBody.contains("content") && responseBody["content"].is_array()) {
 			for(const json &block : responseBody["content"]) {
-				if(block.contains("type") && block["type"] == "text" &&block.contains("text") && block["text"].is_string()) {
+				if(block.contains("type") && block["type"] == "text" && block.contains("text") &&
+				   block["text"].is_string()) {
 					text += block["text"].get<std::string>();
 				}
 			}
