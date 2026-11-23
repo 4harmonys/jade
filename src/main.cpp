@@ -4,16 +4,18 @@
 #include "log.hpp"
 #include "parser.hpp"
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <curl/curl.h>
 #include <optional>
 #include <string>
 
 static void PrintUsage(FILE *Out) {
-	fprintf(Out, "usage: jade [-o <output.o>] [<file.jade>]\n"
+	fprintf(Out, "usage: jade [-c] [-o <output>] [<file.jade>]\n"
 	             "\n"
 	             "  <file.jade>   source file to read (default: stdin)\n"
-	             "  -o <file>     object file to write (default: output.o)\n"
+	             "  -o <file>     file to write (default: a.out, or output.o with -c)\n"
+	             "  -c            compile to an object file only, don't link\n"
 	             "\n"
 	             "Entry point: top-level expressions and `def main()` run in order; each result is printed.\n"
 	             "  -h, --help    show this help\n");
@@ -28,9 +30,31 @@ static std::string ModifyIR(AnthropicClient &AI, const std::string &IR) {
 	return Reply;
 }
 
+/// Quote a path for the shell.
+static std::string ShellQuote(const std::string &S) {
+	std::string Out = "'";
+	for(char C : S) {
+		Out += C == '\'' ? std::string("'\\''") : std::string(1, C);
+	}
+	return Out + "'";
+}
+
+/// Link the object into an executable with the system C compiler driver (pulls in libc for printf).
+static int LinkExecutable(const std::string &Object, const std::string &Output) {
+	Log("link", "cc %s -> %s", Object.c_str(), Output.c_str());
+	std::string Cmd = "cc " + ShellQuote(Object) + " -o " + ShellQuote(Output);
+	if(std::system(Cmd.c_str()) != 0) {
+		Log("link", "failed");
+		return 1;
+	}
+	Log("link", "wrote %s", Output.c_str());
+	return 0;
+}
+
 int main(int argc, char **argv) {
 	const char *InputPath = nullptr;
-	const char *OutputPath = "output.o";
+	const char *OutputPath = nullptr;
+	bool CompileOnly = false;
 
 	for(int i = 1; i < argc; ++i) {
 		if(!strcmp(argv[i], "-o")) {
@@ -39,6 +63,8 @@ int main(int argc, char **argv) {
 				return 1;
 			}
 			OutputPath = argv[i];
+		} else if(!strcmp(argv[i], "-c")) {
+			CompileOnly = true;
 		} else if(!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
 			PrintUsage(stdout);
 			return 0;
@@ -52,6 +78,10 @@ int main(int argc, char **argv) {
 		} else {
 			InputPath = argv[i];
 		}
+	}
+
+	if(!OutputPath) {
+		OutputPath = CompileOnly ? "output.o" : "a.out";
 	}
 
 	std::optional<AnthropicClient> AI;
@@ -97,7 +127,12 @@ int main(int argc, char **argv) {
 	}
 
 	if(Status == 0) {
-		Status = EmitObjectFile(OutputPath, RawIR);
+		std::string ObjectPath = CompileOnly ? OutputPath : std::string(OutputPath) + ".o";
+		Status = EmitObjectFile(ObjectPath.c_str(), RawIR);
+		if(Status == 0 && !CompileOnly) {
+			Status = LinkExecutable(ObjectPath, OutputPath);
+			std::remove(ObjectPath.c_str());
+		}
 	}
 
 	if(AI) {
