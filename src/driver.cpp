@@ -1,19 +1,24 @@
 #include "src/codegen.hpp"
 #include "src/parser.hpp"
 #include "src/token.hpp"
-#include "llvm/IR/BasicBlock.h"
-#include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Module.h"
-#include "llvm/IR/Type.h"
-#include "llvm/IR/Verifier.h"
-#include <cctype>
+#include "llvm/IR/LegacyPassManager.h"
+#include "llvm/MC/TargetRegistry.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetOptions.h"
+#include "llvm/TargetParser/Host.h"
 #include <cstdio>
 #include <cstdlib>
+#include <string>
+#include <vector>
+#include <system_error>
 
 using namespace llvm;
+
+/// Names of the functions generated for top-level expressions (object-file mode).
+static std::vector<std::string> TopLevelFns;
 
 static void HandleDefinition() {
 	if(auto FnAST = ParseDefinition()) {
@@ -21,8 +26,11 @@ static void HandleDefinition() {
 			fprintf(stderr, "Read function definition:");
 			FnIR->print(errs());
 			fprintf(stderr, "\n");
-			ExitOnErr(TheJIT->addModule(ThreadSafeModule(std::move(TheModule), std::move(TheContext))));
-			InitializeModuleAndManagers();
+			if(JitMode) {
+				// Hand the finished module to the JIT and start a fresh one.
+				ExitOnErr(TheJIT->addModule(ThreadSafeModule(std::move(TheModule), std::move(TheContext))));
+				InitializeModuleAndManagers();
+			}
 		}
 	} else {
 		// Skip token for error recovery.
@@ -47,24 +55,23 @@ static void HandleExtern() {
 static void HandleTopLevelExpression() {
 	// Evaluate a top-level expression into an anonymous function.
 	if(auto FnAST = ParseTopLevelExpr()) {
-		if(FnAST->codegen()) {
-			// Create a ResourceTracker to track JIT'd memory allocated to our
-			// anonymous expression -- that way we can free it after executing.
+		Function *FnIR = FnAST->codegen();
+		if(FnIR && !JitMode) {
+			// Give each top-level expression a unique name; EmitMain() calls them in order.
+			std::string Name = "__anon_expr" + std::to_string(TopLevelFns.size());
+			FnIR->setName(Name);
+			TopLevelFns.push_back(Name);
+		} else if(FnIR) {
+			// Track the JIT'd memory of this anonymous expression so it can be freed after running.
 			auto RT = TheJIT->getMainJITDylib().createResourceTracker();
 
-			auto TSM = ThreadSafeModule(std::move(TheModule), std::move(TheContext));
-			ExitOnErr(TheJIT->addModule(std::move(TSM), RT));
+			ExitOnErr(TheJIT->addModule(ThreadSafeModule(std::move(TheModule), std::move(TheContext)), RT));
 			InitializeModuleAndManagers();
 
-			// Search the JIT for the __anon_expr symbol.
 			auto ExprSymbol = ExitOnErr(TheJIT->lookup("__anon_expr"));
-
-			// Get the symbol's address and cast it to the right type (takes no
-			// arguments, returns a double) so we can call it as a native function.
 			double (*FP)() = ExprSymbol.getAddress().toPtr<double (*)()>();
 			fprintf(stderr, "Evaluated to %f\n", FP());
 
-			// Delete the anonymous expression module from the JIT.
 			ExitOnErr(RT->remove());
 		}
 	} else {
@@ -74,9 +81,11 @@ static void HandleTopLevelExpression() {
 }
 
 /// top ::= definition | external | expression | ';'
-void MainLoop() {
+void MainLoop(bool Prompt) {
 	while(true) {
-		fprintf(stderr, "ready> ");
+		if(Prompt) {
+			fprintf(stderr, "ready> ");
+		}
 		switch(GetCurTok()) {
 			case tok_eof:
 				return;
@@ -94,6 +103,101 @@ void MainLoop() {
 				break;
 		}
 	}
+}
+
+/// EmitMain - Generate the native `int main()` entry point. It evaluates every
+/// top-level expression in order, then calls the user's `def main()` if there is one,
+/// printing each result. Does nothing if there is neither, so a file of only
+/// definitions still compiles to a plain library object.
+static bool EmitMain() {
+	std::vector<std::string> Entries = TopLevelFns;
+
+	// A jade `main` returns a double, so it can't be the native entry point itself.
+	// Rename it and call it from the generated one.
+	if(Function *UserMain = TheModule->getFunction("main")) {
+		if(UserMain->arg_size() != 0) {
+			errs() << "Error: 'main' must take no arguments\n";
+			return false;
+		}
+		UserMain->setName("jade_main");
+		Entries.push_back("jade_main");
+	}
+	if(Entries.empty()) {
+		return true;
+	}
+
+	Type *I32 = Type::getInt32Ty(*TheContext);
+	Function *Main = Function::Create(FunctionType::get(I32, false), Function::ExternalLinkage, "main", TheModule.get());
+	Builder->SetInsertPoint(BasicBlock::Create(*TheContext, "entry", Main));
+
+	FunctionCallee Printf = TheModule->getOrInsertFunction(
+	    "printf", FunctionType::get(I32, {PointerType::getUnqual(*TheContext)}, /*isVarArg=*/true));
+	Value *Fmt = Builder->CreateGlobalString("%f\n", "fmt");
+
+	for(const std::string &Name : Entries) {
+		Value *Result = Builder->CreateCall(TheModule->getFunction(Name));
+		Builder->CreateCall(Printf, {Fmt, Result});
+	}
+	Builder->CreateRet(ConstantInt::get(I32, 0));
+
+	return !verifyFunction(*Main, &errs());
+}
+
+/// EmitObjectFile - Compile TheModule for the host target and write it to Filename.
+/// Returns 0 on success, nonzero on failure.
+int EmitObjectFile(const char *Filename) {
+	if(!EmitMain()) {
+		return 1;
+	}
+
+	// Initialize the target registry etc.
+	InitializeAllTargetInfos();
+	InitializeAllTargets();
+	InitializeAllTargetMCs();
+	InitializeAllAsmParsers();
+	InitializeAllAsmPrinters();
+
+	auto TargetTriple = sys::getDefaultTargetTriple();
+	TheModule->setTargetTriple(Triple(TargetTriple));
+
+	std::string Error;
+	auto Target = TargetRegistry::lookupTarget(TheModule->getTargetTriple(), Error);
+
+	// Print an error and exit if we couldn't find the requested target.
+	if(!Target) {
+		errs() << Error;
+		return 1;
+	}
+
+	auto CPU = "generic";
+	auto Features = "";
+
+	TargetOptions opt;
+	auto TheTargetMachine = Target->createTargetMachine(Triple(TargetTriple), CPU, Features, opt, Reloc::PIC_);
+
+	TheModule->setDataLayout(TheTargetMachine->getTargetTriple().computeDataLayout());
+
+	std::error_code EC;
+	raw_fd_ostream dest(Filename, EC, sys::fs::OF_None);
+
+	if(EC) {
+		errs() << "Could not open file: " << EC.message() << "\n";
+		return 1;
+	}
+
+	legacy::PassManager pass;
+	auto FileType = CodeGenFileType::ObjectFile;
+
+	if(TheTargetMachine->addPassesToEmitFile(pass, dest, nullptr, FileType)) {
+		errs() << "TheTargetMachine can't emit a file of this type\n";
+		return 1;
+	}
+
+	pass.run(*TheModule);
+	dest.flush();
+
+	outs() << "Wrote " << Filename << "\n";
+	return 0;
 }
 
 //===----------------------------------------------------------------------===//

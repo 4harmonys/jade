@@ -22,6 +22,7 @@ std::unique_ptr<Module> TheModule;
 std::unique_ptr<IRBuilder<>> Builder;
 std::map<std::string, AllocaInst *> NamedValues;
 std::unique_ptr<KaleidoscopeJIT> TheJIT;
+bool JitMode = false;
 std::unique_ptr<FunctionPassManager> TheFPM;
 std::unique_ptr<LoopAnalysisManager> TheLAM;
 std::unique_ptr<FunctionAnalysisManager> TheFAM;
@@ -421,9 +422,11 @@ Function *FunctionAST::codegen() {
 void InitializeModuleAndManagers(void) {
 	// Open a new context and module.
 	TheContext = std::make_unique<LLVMContext>();
-	TheModule = std::make_unique<Module>("KaleidoscopeJIT", *TheContext);
-	TheModule->setTargetTriple(TheJIT->getTargetTriple());
-	TheModule->setDataLayout(TheJIT->getDataLayout());
+	TheModule = std::make_unique<Module>("jade", *TheContext);
+	if(JitMode) {
+		TheModule->setTargetTriple(TheJIT->getTargetTriple());
+		TheModule->setDataLayout(TheJIT->getDataLayout());
+	}
 
 	// Create a new builder for the module.
 	Builder = std::make_unique<IRBuilder<>>(*TheContext);

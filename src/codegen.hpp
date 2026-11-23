@@ -13,6 +13,7 @@
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Support/TargetSelect.h"
@@ -45,6 +46,8 @@ extern std::unique_ptr<Module> TheModule;
 extern std::unique_ptr<IRBuilder<>> Builder;
 extern std::map<std::string, AllocaInst *> NamedValues;
 extern std::unique_ptr<KaleidoscopeJIT> TheJIT;
+// True when running in --jit mode (execute as we go) rather than emitting an object file.
+extern bool JitMode;
 extern std::unique_ptr<FunctionPassManager> TheFPM;
 extern std::unique_ptr<LoopAnalysisManager> TheLAM;
 extern std::unique_ptr<FunctionAnalysisManager> TheFAM;

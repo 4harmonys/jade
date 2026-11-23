@@ -1,3 +1,4 @@
 #pragma once
 
-void MainLoop();
+void MainLoop(bool Prompt);
+int EmitObjectFile(const char *Filename);
