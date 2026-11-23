@@ -1,6 +1,6 @@
 #pragma once
 
-#include "src/ast.hpp"
+#include "ast.hpp"
 #include <map>
 #include <memory>
 
